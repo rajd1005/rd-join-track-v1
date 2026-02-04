@@ -1,13 +1,13 @@
 import logging
 import sqlite3
 import asyncio
+import os
 from datetime import datetime, time
 import pytz
 from telegram import Update
 from telegram.ext import Application, ChatMemberHandler, ContextTypes, Defaults
 
 # --- CONFIGURATION ---
-import os
 TOKEN = os.getenv("BOT_TOKEN")
 LOG_CHANNEL_ID = os.getenv("LOG_CHANNEL_ID") 
 
@@ -22,12 +22,13 @@ logging.basicConfig(
 
 # --- DATABASE MANAGEMENT ---
 class BotState:
-    # We save the DB in a folder named 'data'
-def __init__(self, db_name="/app/data/bot_data.db"): 
-    # Ensure the directory exists
-    os.makedirs(os.path.dirname(db_name), exist_ok=True) 
-    self.conn = sqlite3.connect(db_name, check_same_thread=False)
-    self.create_tables()
+    # INDENTATION FIXED HERE:
+    def __init__(self, db_name="/app/data/bot_data.db"):
+        # Create the directory if it doesn't exist (Critical for Railway Volumes)
+        os.makedirs(os.path.dirname(db_name), exist_ok=True)
+        
+        self.conn = sqlite3.connect(db_name, check_same_thread=False)
+        self.create_tables()
 
     def create_tables(self):
         with self.conn:
@@ -158,13 +159,12 @@ async def send_daily_report(context: ContextTypes.DEFAULT_TYPE):
     if not reports:
         return
 
-    # Create a summary message or send individual messages
     for row in reports:
         chat_title, date_str, joins, leaves = row
         stay_count = joins - leaves
         
         if joins == 0 and leaves == 0:
-            continue # Skip inactive channels
+            continue 
 
         report_msg = (
             f"📊 **Daily Report: {chat_title}**\n"
@@ -180,8 +180,7 @@ async def send_daily_report(context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logging.error(f"Failed to send report for {chat_title}: {e}")
 
-    # Reset counters logic is handled automatically by 'check_date_reset' on the next activity
-    # But we can force update the date now to be clean
+    # Force date reset for clean slate (optional but safe)
     next_day = datetime.now(IST).strftime('%Y-%m-%d')
     with db.conn:
         db.conn.execute("UPDATE daily_stats SET date_str = ?, join_count = 0, leave_count = 0", (next_day,))
