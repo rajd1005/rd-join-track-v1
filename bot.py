@@ -3,7 +3,7 @@ import sqlite3
 import asyncio
 import os
 from datetime import datetime, time
-import pytz
+from zoneinfo import ZoneInfo  # Updated from pytz
 from telegram import Update
 from telegram.ext import Application, ChatMemberHandler, ContextTypes, Defaults
 
@@ -11,8 +11,8 @@ from telegram.ext import Application, ChatMemberHandler, ContextTypes, Defaults
 TOKEN = os.getenv("BOT_TOKEN")
 LOG_CHANNEL_ID = os.getenv("LOG_CHANNEL_ID") 
 
-# Timezone setup
-IST = pytz.timezone('Asia/Kolkata')
+# Timezone setup (Updated to modern ZoneInfo)
+IST = ZoneInfo('Asia/Kolkata')
 
 # Logging setup
 logging.basicConfig(
@@ -22,7 +22,6 @@ logging.basicConfig(
 
 # --- DATABASE MANAGEMENT ---
 class BotState:
-    # INDENTATION FIXED HERE:
     def __init__(self, db_name="/app/data/bot_data.db"):
         # Create the directory if it doesn't exist (Critical for Railway Volumes)
         os.makedirs(os.path.dirname(db_name), exist_ok=True)
@@ -55,16 +54,12 @@ class BotState:
         """Checks if the date has changed. If yes, resets EVERYTHING."""
         current_date = datetime.now(IST).strftime('%Y-%m-%d')
         
-        # Check the date of the first row (assuming all rows sync to same day)
         cursor = self.conn.execute("SELECT date_str FROM daily_stats LIMIT 1")
         row = cursor.fetchone()
         
-        # If DB is empty or date changed
         if not row or row[0] != current_date:
             with self.conn:
-                # Reset counters for ALL channels to 0 and update date
                 self.conn.execute("UPDATE daily_stats SET date_str = ?, join_count = 0, leave_count = 0", (current_date,))
-                # Clear the list of who joined today
                 self.conn.execute("DELETE FROM today_joiners")
             logging.info(f"Date changed to {current_date}. All counters reset.")
 
@@ -73,38 +68,30 @@ class BotState:
         current_date = datetime.now(IST).strftime('%Y-%m-%d')
         
         with self.conn:
-            # Ensure the channel exists in our DB
             self.conn.execute("""
                 INSERT OR IGNORE INTO daily_stats (chat_id, chat_title, date_str, join_count, leave_count) 
                 VALUES (?, ?, ?, 0, 0)
             """, (chat_id, chat_title, current_date))
             
-            # Update Title (in case it changed) and Increment Join
             self.conn.execute("UPDATE daily_stats SET chat_title = ?, join_count = join_count + 1 WHERE chat_id = ?", (chat_title, chat_id))
-            
-            # Record that this user joined THIS specific channel today
             self.conn.execute("INSERT OR IGNORE INTO today_joiners (user_id, chat_id) VALUES (?, ?)", (user_id, chat_id))
             
-            # Get the new count
             cursor = self.conn.execute("SELECT join_count FROM daily_stats WHERE chat_id = ?", (chat_id,))
             return cursor.fetchone()[0]
 
     def add_leave(self, chat_id, user_id):
         self.check_date_reset()
-        # Check if this user joined THIS specific channel today
         cursor = self.conn.execute("SELECT 1 FROM today_joiners WHERE user_id = ? AND chat_id = ?", (user_id, chat_id))
         
         if cursor.fetchone():
             with self.conn:
                 self.conn.execute("UPDATE daily_stats SET leave_count = leave_count + 1 WHERE chat_id = ?", (chat_id,))
             
-            # Return the new leave count
             cursor = self.conn.execute("SELECT leave_count FROM daily_stats WHERE chat_id = ?", (chat_id,))
             return cursor.fetchone()[0]
         return None
 
     def get_all_reports(self):
-        """Returns a list of stats for all tracked channels."""
         cursor = self.conn.execute("SELECT chat_title, date_str, join_count, leave_count FROM daily_stats")
         return cursor.fetchall()
 
@@ -180,7 +167,7 @@ async def send_daily_report(context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logging.error(f"Failed to send report for {chat_title}: {e}")
 
-    # Force date reset for clean slate (optional but safe)
+    # Force date reset
     next_day = datetime.now(IST).strftime('%Y-%m-%d')
     with db.conn:
         db.conn.execute("UPDATE daily_stats SET date_str = ?, join_count = 0, leave_count = 0", (next_day,))
@@ -198,8 +185,12 @@ def main():
 
     application.add_handler(ChatMemberHandler(track_chats, ChatMemberHandler.CHAT_MEMBER))
 
-    job_queue = application.job_queue
-    job_queue.run_daily(send_daily_report, time=time(hour=0, minute=0, second=0, tzinfo=IST))
+    # JobQueue will now be available because of the requirements.txt update
+    if application.job_queue:
+        application.job_queue.run_daily(send_daily_report, time=time(hour=0, minute=0, second=0, tzinfo=IST))
+        print("Scheduler started.")
+    else:
+        print("Error: JobQueue not available. Check requirements.txt")
 
     print("Multi-Channel Bot is running...")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
