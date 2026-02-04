@@ -22,9 +22,12 @@ logging.basicConfig(
 
 # --- DATABASE MANAGEMENT ---
 class BotState:
-    def __init__(self, db_name="bot_data.db"):
-        self.conn = sqlite3.connect(db_name, check_same_thread=False)
-        self.create_tables()
+    # We save the DB in a folder named 'data'
+def __init__(self, db_name="/app/data/bot_data.db"): 
+    # Ensure the directory exists
+    os.makedirs(os.path.dirname(db_name), exist_ok=True) 
+    self.conn = sqlite3.connect(db_name, check_same_thread=False)
+    self.create_tables()
 
     def create_tables(self):
         with self.conn:
